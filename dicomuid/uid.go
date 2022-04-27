@@ -463,6 +463,19 @@ func standardUID(uid string) string {
 	return MustLookup(uid).UID
 }
 
+// UIDDict returns a copy of uidDict. For safety reason, any changes to the
+// returning dictionary of this function will not have any affect to
+// functionality of this package.
+func UIDDict() map[string]UIDInfo {
+	maybeInitUIDDict()
+
+	var uidDictClone = make(map[string]UIDInfo, len(uidDict))
+	for k, v := range uidDict {
+		uidDictClone[k] = v
+	}
+	return uidDictClone
+}
+
 // Find information about the given uid (string starting with 1.2.840).  Returns
 // an error unless uid is the one defined in the DICOM standard, P3.6.
 func Lookup(uid string) (UIDInfo, error) {
