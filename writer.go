@@ -11,6 +11,30 @@ import (
 	"github.com/grailbio/go-dicom/dicomtag"
 )
 
+// WriteOptSet represents the flattened option set after all WriteOptions have been applied.
+type WriteOptSet struct {
+	SkipVRVerification bool
+}
+
+func toWriteOptSet(opts ...WriteOption) *WriteOptSet {
+	optSet := &WriteOptSet{}
+	for _, opt := range opts {
+		opt(optSet)
+	}
+	return optSet
+}
+
+// WriteOption represents an option that can be passed to WriteDataset. Later options will override previous options if
+// applicable.
+type WriteOption func(*WriteOptSet)
+
+// SkipVRVerification returns a WriteOption that skips VR verification.
+func SkipVRVerification() WriteOption {
+	return func(set *WriteOptSet) {
+		set.SkipVRVerification = true
+	}
+}
+
 // WriteFileHeader produces a DICOM file header. metaElems[] is be a list of
 // elements to be embedded in the header part.  Every element in metaElems[]
 // must have Tag.Group==2. It must contain at least the following three
@@ -23,7 +47,7 @@ import (
 // Consult the following page for the DICOM file header format.
 //
 // http://dicom.nema.org/dicom/2013/output/chtml/part10/chapter_7.html
-func WriteFileHeader(e *dicomio.Encoder, metaElems []*Element) {
+func WriteFileHeader(e *dicomio.Encoder, metaElems []*Element, opts *WriteOptSet) {
 	e.PushTransferSyntax(binary.LittleEndian, dicomio.ExplicitVR)
 	defer e.PopTransferSyntax()
 
@@ -32,7 +56,7 @@ func WriteFileHeader(e *dicomio.Encoder, metaElems []*Element) {
 	tagsUsed[dicomtag.FileMetaInformationGroupLength] = true
 	writeRequiredMetaElem := func(tag dicomtag.Tag) {
 		if elem, err := FindElementByTag(metaElems, tag); err == nil {
-			WriteElement(subEncoder, elem)
+			WriteElement(subEncoder, elem, opts)
 		} else {
 			subEncoder.SetErrorf("%v not found in metaelems: %v", dicomtag.DebugString(tag), err)
 		}
@@ -40,9 +64,9 @@ func WriteFileHeader(e *dicomio.Encoder, metaElems []*Element) {
 	}
 	writeOptionalMetaElem := func(tag dicomtag.Tag, defaultValue interface{}) {
 		if elem, err := FindElementByTag(metaElems, tag); err == nil {
-			WriteElement(subEncoder, elem)
+			WriteElement(subEncoder, elem, opts)
 		} else {
-			WriteElement(subEncoder, MustNewElement(tag, defaultValue))
+			WriteElement(subEncoder, MustNewElement(tag, defaultValue), opts)
 		}
 		tagsUsed[tag] = true
 	}
@@ -55,7 +79,7 @@ func WriteFileHeader(e *dicomio.Encoder, metaElems []*Element) {
 	for _, elem := range metaElems {
 		if elem.Tag.Group == dicomtag.MetadataGroup {
 			if _, ok := tagsUsed[elem.Tag]; !ok {
-				WriteElement(subEncoder, elem)
+				WriteElement(subEncoder, elem, opts)
 			}
 		}
 	}
@@ -66,7 +90,7 @@ func WriteFileHeader(e *dicomio.Encoder, metaElems []*Element) {
 	metaBytes := subEncoder.Bytes()
 	e.WriteZeros(128)
 	e.WriteString("DICM")
-	WriteElement(e, MustNewElement(dicomtag.FileMetaInformationGroupLength, uint32(len(metaBytes))))
+	WriteElement(e, MustNewElement(dicomtag.FileMetaInformationGroupLength, uint32(len(metaBytes))), opts)
 	e.WriteBytes(metaBytes)
 }
 
@@ -109,31 +133,45 @@ func writeBasicOffsetTable(e *dicomio.Encoder, offsets []uint32) {
 	writeRawItem(e, subEncoder.Bytes())
 }
 
+func verifyVROrDefault(t dicomtag.Tag, vr string, opts *WriteOptSet) (string, error) {
+	if vr != "" && opts.SkipVRVerification {
+		return vr, nil
+	}
+
+	tagInfo, err := dicomtag.Find(t)
+	if err != nil {
+		if vr == "" {
+			vr = "UN"
+		}
+		return vr, nil
+	}
+	if vr == "" {
+		return tagInfo.VR, nil
+	}
+
+	// Verify the VR on the way out if the caller wants it.
+	if !opts.SkipVRVerification && tagInfo.VR != vr {
+		if dicomtag.GetVRKind(t, tagInfo.VR) != dicomtag.GetVRKind(t, vr) {
+			return "", fmt.Errorf("ERROR dicomio.veryifyElement: VR mismatch for tag %v. Element.VR=%v, but DICOM standard defines VR to be %v",
+				dicomtag.DebugString(t), vr, tagInfo.VR)
+		}
+		dicomlog.Vprintf(1, "dicom.WriteElement: VR value mismatch for tag %s. Element.VR=%v, but DICOM standard defines VR to be %v (continuing)",
+			dicomtag.DebugString(t), vr, tagInfo.VR)
+	}
+	return vr, nil
+}
+
 // WriteElement encodes one data element.  Errors are reported through e.Error()
 // and/or E.Finish().
 //
 // REQUIRES: Each value in values[] must match the VR of the tag. E.g., if tag
 // is for UL, then each value must be uint32.
-func WriteElement(e *dicomio.Encoder, elem *Element) {
-	vr := elem.VR
-	entry, err := dicomtag.Find(elem.Tag)
-	if vr == "" {
-		if err == nil {
-			vr = entry.VR
-		} else {
-			vr = "UN"
-		}
-	} else {
-		if err == nil && entry.VR != vr {
-			if dicomtag.GetVRKind(elem.Tag, entry.VR) != dicomtag.GetVRKind(elem.Tag, vr) {
-				// The golang repl. is different. We can't continue.
-				e.SetErrorf("dicom.WriteElement: VR value mismatch for tag %s. Element.VR=%v, but DICOM standard defines VR to be %v",
-					dicomtag.DebugString(elem.Tag), vr, entry.VR)
-				return
-			}
-			dicomlog.Vprintf(1, "dicom.WriteElement: VR value mismatch for tag %s. Element.VR=%v, but DICOM standard defines VR to be %v (continuing)",
-				dicomtag.DebugString(elem.Tag), vr, entry.VR)
-		}
+
+func WriteElement(e *dicomio.Encoder, elem *Element, opts *WriteOptSet) {
+	vr, err := verifyVROrDefault(elem.Tag, elem.VR, opts)
+	if err != nil {
+		e.SetErrorf(err.Error())
+		return
 	}
 	doassert(vr != "", vr)
 	if elem.Tag == dicomtag.PixelData {
@@ -168,7 +206,7 @@ func WriteElement(e *dicomio.Encoder, elem *Element) {
 					e.SetError(fmt.Errorf("SQ element must be an Item, but found %v", value))
 					return
 				}
-				WriteElement(e, subelem)
+				WriteElement(e, subelem, opts)
 			}
 			encodeElementHeader(e, dicomtag.SequenceDelimitationItem, "" /*not used*/, 0)
 		} else {
@@ -179,7 +217,7 @@ func WriteElement(e *dicomio.Encoder, elem *Element) {
 					e.SetErrorf("SQ element must be an Item, but found %v", value)
 					return
 				}
-				WriteElement(sube, subelem)
+				WriteElement(sube, subelem, opts)
 			}
 			if sube.Error() != nil {
 				e.SetError(sube.Error())
@@ -198,7 +236,7 @@ func WriteElement(e *dicomio.Encoder, elem *Element) {
 					e.SetErrorf("Item values must be a dicom.Element, but found %v", value)
 					return
 				}
-				WriteElement(e, subelem)
+				WriteElement(e, subelem, opts)
 			}
 			encodeElementHeader(e, dicomtag.ItemDelimitationItem, "" /*not used*/, 0)
 		} else {
@@ -209,7 +247,7 @@ func WriteElement(e *dicomio.Encoder, elem *Element) {
 					e.SetErrorf("Item values must be a dicom.Element, but found %v", value)
 					return
 				}
-				WriteElement(sube, subelem)
+				WriteElement(sube, subelem, opts)
 			}
 			if sube.Error() != nil {
 				e.SetError(sube.Error())
@@ -378,7 +416,8 @@ func WriteElement(e *dicomio.Encoder, elem *Element) {
 //  ds := ... read or create dicom.Dataset ...
 //  out, err := os.Create("test.dcm")
 //  err := dicom.Write(out, ds)
-func WriteDataSet(out io.Writer, ds *DataSet) error {
+func WriteDataSet(out io.Writer, ds *DataSet, opts ...WriteOption) error {
+	optSet := toWriteOptSet(opts...)
 	e := dicomio.NewEncoder(out, nil, dicomio.UnknownVR)
 	var metaElems []*Element
 	for _, elem := range ds.Elements {
@@ -386,7 +425,7 @@ func WriteDataSet(out io.Writer, ds *DataSet) error {
 			metaElems = append(metaElems, elem)
 		}
 	}
-	WriteFileHeader(e, metaElems)
+	WriteFileHeader(e, metaElems, optSet)
 	if e.Error() != nil {
 		return e.Error()
 	}
@@ -397,7 +436,7 @@ func WriteDataSet(out io.Writer, ds *DataSet) error {
 	e.PushTransferSyntax(endian, implicit)
 	for _, elem := range ds.Elements {
 		if elem.Tag.Group != dicomtag.MetadataGroup {
-			WriteElement(e, elem)
+			WriteElement(e, elem, optSet)
 		}
 	}
 	e.PopTransferSyntax()
