@@ -5,12 +5,13 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/grailbio/go-dicom"
 	"github.com/grailbio/go-dicom/dicomio"
 	"github.com/grailbio/go-dicom/dicomtag"
 	"github.com/grailbio/go-dicom/dicomuid"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func testWriteDataElement(t *testing.T, bo binary.ByteOrder, implicit dicomio.IsImplicitVR) {
@@ -20,13 +21,13 @@ func testWriteDataElement(t *testing.T, bo binary.ByteOrder, implicit dicomio.Is
 	values = append(values, string("FooHah"))
 	dicom.WriteElement(e, &dicom.Element{
 		Tag:   dicomtag.Tag{0x0018, 0x9755},
-		Value: values})
+		Value: values}, &dicom.WriteOptSet{})
 	values = nil
 	values = append(values, uint32(1234))
 	values = append(values, uint32(2345))
 	dicom.WriteElement(e, &dicom.Element{
 		Tag:   dicomtag.Tag{0x0020, 0x9057},
-		Value: values})
+		Value: values}, &dicom.WriteOptSet{})
 	data := e.Bytes()
 	// Read them back.
 	d := dicomio.NewBytesDecoder(data, bo, implicit)
@@ -67,7 +68,7 @@ func TestReadWriteFileHeader(t *testing.T) {
 			dicom.MustNewElement(dicomtag.TransferSyntaxUID, dicomuid.ImplicitVRLittleEndian),
 			dicom.MustNewElement(dicomtag.MediaStorageSOPClassUID, "1.2.840.10008.5.1.4.1.1.1.2"),
 			dicom.MustNewElement(dicomtag.MediaStorageSOPInstanceUID, "1.2.3.4.5.6.7"),
-		})
+		}, &dicom.WriteOptSet{})
 	bytes := e.Bytes()
 	d := dicomio.NewBytesDecoder(bytes, binary.LittleEndian, dicomio.ImplicitVR)
 	elems := dicom.ParseFileHeader(d)

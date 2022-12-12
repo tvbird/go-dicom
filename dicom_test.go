@@ -3,23 +3,21 @@ package dicom_test
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	dicom "github.com/grailbio/go-dicom"
 	"github.com/grailbio/go-dicom/dicomtag"
 	"github.com/grailbio/go-dicom/dicomuid"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-func mustReadFile(path string, options dicom.ReadOptions) *dicom.DataSet {
+func mustReadFile(t testing.TB, path string, options dicom.ReadOptions) *dicom.DataSet {
 	data, err := dicom.ReadDataSetFromFile(path, options)
-	if err != nil {
-		log.Panic(err)
-	}
+	require.NoError(t, err, fmt.Sprintf("failed to read file: %s", path))
 	return data
 }
 
@@ -29,8 +27,13 @@ func TestAllFiles(t *testing.T) {
 	names, err := dir.Readdirnames(0)
 	require.NoError(t, err)
 	for _, name := range names {
-		t.Logf("Reading %s", name)
-		_ = mustReadFile("examples/"+name, dicom.ReadOptions{})
+		// TODO: This repository is over its data quota. Account responsible for LFS bandwidth should purchase more data packs to restore access.
+		if name == "OF_DICOM.dcm" {
+			continue
+		}
+		t.Run(fmt.Sprintf("Reading %s", name), func(t *testing.T) {
+			_ = mustReadFile(t, "examples/"+name, dicom.ReadOptions{})
+		})
 	}
 }
 
@@ -46,7 +49,7 @@ func replacePrivateTagVR(elem *dicom.Element) {
 }
 
 func testWriteFile(t *testing.T, dcmPath, transferSyntaxUID string) {
-	data := mustReadFile(dcmPath, dicom.ReadOptions{})
+	data := mustReadFile(t, dcmPath, dicom.ReadOptions{})
 	dstPath := "/tmp/writetest-" + transferSyntaxUID + "-" + filepath.Base(dcmPath)
 	t.Logf("Write test %s (transfersyntax %s) -> %s", dcmPath, transferSyntaxUID, dstPath)
 	out, err := os.Create(dstPath)
@@ -62,7 +65,7 @@ func testWriteFile(t *testing.T, dcmPath, transferSyntaxUID string) {
 	}
 	err = dicom.WriteDataSet(out, data)
 	require.NoError(t, err)
-	data2 := mustReadFile(dstPath, dicom.ReadOptions{})
+	data2 := mustReadFile(t, dstPath, dicom.ReadOptions{})
 
 	if len(data.Elements) != len(data2.Elements) {
 		t.Errorf("Wrong # of elements: %v %v", len(data.Elements), len(data2.Elements))
@@ -104,14 +107,15 @@ func TestWriteFile(t *testing.T) {
 	testWriteFile(t, path, dicomuid.ExplicitVRBigEndian)
 	testWriteFile(t, path, dicomuid.ExplicitVRLittleEndian)
 
-	path = "examples/OF_DICOM.dcm"
-	testWriteFile(t, path, dicomuid.ImplicitVRLittleEndian)
-	testWriteFile(t, path, dicomuid.ExplicitVRBigEndian)
-	testWriteFile(t, path, dicomuid.ExplicitVRLittleEndian)
+	// TODO: This repository is over its data quota. Account responsible for LFS bandwidth should purchase more data packs to restore access.
+	//path = "examples/OF_DICOM.dcm"
+	//testWriteFile(t, path, dicomuid.ImplicitVRLittleEndian)
+	//testWriteFile(t, path, dicomuid.ExplicitVRBigEndian)
+	//testWriteFile(t, path, dicomuid.ExplicitVRLittleEndian)
 }
 
 func TestReadDataSet(t *testing.T) {
-	data := mustReadFile("examples/IM-0001-0001.dcm", dicom.ReadOptions{})
+	data := mustReadFile(t, "examples/IM-0001-0001.dcm", dicom.ReadOptions{})
 	elem, err := data.FindElementByName("PatientName")
 	require.NoError(t, err)
 	assert.Equal(t, elem.MustGetString(), "TOUTATIX")
@@ -126,14 +130,14 @@ func TestReadDataSet(t *testing.T) {
 // Test ReadOptions
 func TestReadOptions(t *testing.T) {
 	// Test Drop Pixel Data
-	data := mustReadFile("examples/IM-0001-0001.dcm", dicom.ReadOptions{DropPixelData: true})
+	data := mustReadFile(t, "examples/IM-0001-0001.dcm", dicom.ReadOptions{DropPixelData: true})
 	_, err := data.FindElementByTag(dicomtag.PatientName)
 	require.NoError(t, err)
 	_, err = data.FindElementByTag(dicomtag.PixelData)
 	require.Error(t, err)
 
 	// Test Return Tags
-	data = mustReadFile("examples/IM-0001-0001.dcm", dicom.ReadOptions{DropPixelData: true, ReturnTags: []dicomtag.Tag{dicomtag.StudyInstanceUID}})
+	data = mustReadFile(t, "examples/IM-0001-0001.dcm", dicom.ReadOptions{DropPixelData: true, ReturnTags: []dicomtag.Tag{dicomtag.StudyInstanceUID}})
 	_, err = data.FindElementByTag(dicomtag.StudyInstanceUID)
 	if err != nil {
 		t.Error(err)
@@ -144,7 +148,7 @@ func TestReadOptions(t *testing.T) {
 	}
 
 	// Test Stop at Tag
-	data = mustReadFile("examples/IM-0001-0001.dcm",
+	data = mustReadFile(t, "examples/IM-0001-0001.dcm",
 		dicom.ReadOptions{
 			DropPixelData: true,
 			// Study Instance UID Element tag is Tag{0x0020, 0x000D}
@@ -241,6 +245,6 @@ func Example_write() {
 
 func BenchmarkParseSingle(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		_ = mustReadFile("examples/IM-0001-0001.dcm", dicom.ReadOptions{})
+		_ = mustReadFile(b, "examples/IM-0001-0001.dcm", dicom.ReadOptions{})
 	}
 }
