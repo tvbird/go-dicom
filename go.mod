@@ -1,4 +1,4 @@
-module github.com/grailbio/go-dicom
+module github.com/msz-kp/go-dicom
 
 go 1.14
 

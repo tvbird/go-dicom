@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	dicom "github.com/grailbio/go-dicom"
-	"github.com/grailbio/go-dicom/dicomtag"
-	"github.com/grailbio/go-dicom/dicomuid"
+	dicom "github.com/msz-kp/go-dicom"
+	"github.com/msz-kp/go-dicom/dicomtag"
+	"github.com/msz-kp/go-dicom/dicomuid"
 )
 
 func mustReadFile(t testing.TB, path string, options dicom.ReadOptions) *dicom.DataSet {

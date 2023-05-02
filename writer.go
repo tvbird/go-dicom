@@ -6,9 +6,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/grailbio/go-dicom/dicomio"
-	"github.com/grailbio/go-dicom/dicomlog"
-	"github.com/grailbio/go-dicom/dicomtag"
+	"github.com/msz-kp/go-dicom/dicomio"
+	"github.com/msz-kp/go-dicom/dicomlog"
+	"github.com/msz-kp/go-dicom/dicomtag"
 )
 
 // WriteOptSet represents the flattened option set after all WriteOptions have been applied.

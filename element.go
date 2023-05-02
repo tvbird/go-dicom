@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/grailbio/go-dicom/dicomio"
-	"github.com/grailbio/go-dicom/dicomlog"
-	"github.com/grailbio/go-dicom/dicomtag"
+	"github.com/msz-kp/go-dicom/dicomio"
+	"github.com/msz-kp/go-dicom/dicomlog"
+	"github.com/msz-kp/go-dicom/dicomtag"
 )
 
 const itemSeqGroup = 0xFFFE

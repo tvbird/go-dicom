@@ -3,7 +3,7 @@ package dicomuid_test
 import (
 	"testing"
 
-	"github.com/grailbio/go-dicom/dicomuid"
+	"github.com/msz-kp/go-dicom/dicomuid"
 	"github.com/stretchr/testify/assert"
 )
 
