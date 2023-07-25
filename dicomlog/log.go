@@ -3,8 +3,9 @@
 package dicomlog
 
 import (
-	"log"
 	"sync/atomic"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // level sets log verbosity. The larger the value, the more verbose.  Setting it
@@ -25,7 +26,9 @@ func Level() int {
 
 // Vprintf is shorthand for "if level > Level { log.Printf(...) }".
 func Vprintf(l int, format string, args ...interface{}) {
-	if Level() >= l {
-		log.Printf(format, args...)
+	if l == -1 {
+		log.Warnf(format, args...)
+	} else if Level() >= l {
+		log.Debugf(format, args...)
 	}
 }

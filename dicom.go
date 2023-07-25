@@ -50,6 +50,9 @@ type ReadOptions struct {
 	// StopAtag defines a tag at which when read (or a tag with a greater
 	// value than it is read), the program will stop parsing the dicom file.
 	StopAtTag *dicomtag.Tag
+
+	// :/
+	CP1250Fix bool
 }
 
 // ReadDataSetInBytes is a shorthand for ReadDataSet(bytes.NewBuffer(data), len(data)).
@@ -129,7 +132,7 @@ func ReadDataSet(in io.Reader, options ReadOptions) (*DataSet, error) {
 				// middle of a SQ or NA.  In such case, the charset seem
 				// to be scoped inside the SQ or NA. So we need to make
 				// the charset a stack.
-				cs, err := dicomio.ParseSpecificCharacterSet(encodingNames)
+				cs, err := dicomio.ParseSpecificCharacterSet(encodingNames, options.CP1250Fix)
 				if err != nil {
 					buffer.SetError(err)
 				} else {

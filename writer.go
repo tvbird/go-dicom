@@ -258,9 +258,10 @@ func WriteElement(e *dicomio.Encoder, elem *Element, opts *WriteOptSet) {
 			e.WriteBytes(bytes)
 		}
 	} else {
-		if elem.UndefinedLength {
+		if elem.UndefinedLength && vr != "UN" {
 			e.SetErrorf("Encoding undefined-length element not yet supported: %v", elem)
 			return
+
 		}
 		sube := dicomio.NewBytesEncoder(e.TransferSyntax())
 		switch vr {
@@ -379,6 +380,12 @@ func WriteElement(e *dicomio.Encoder, elem *Element, opts *WriteOptSet) {
 		case "AT", "NA":
 			fallthrough
 		default:
+			// dirty UN with undef len hack
+			if elem.UndefinedLength && vr == "UN" {
+				dicomlog.Vprintf(-1, "tag %s removed. (vr 'UN' with undefined length unsupported)", elem.Tag)
+				break
+			}
+
 			s := ""
 			for i, value := range elem.Value {
 				substr, ok := value.(string)

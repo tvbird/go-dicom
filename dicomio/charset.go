@@ -68,13 +68,14 @@ var htmlEncodingNames = map[string]string{
 	"ISO 2022 IR 166": "iso-ir-166",
 	"ISO 2022 IR 87":  "iso-2022-jp",
 	"ISO_IR 192":      "utf-8",
+	"CP1250HACK":      "cp1250",
 }
 
 // ParseSpecificCharacterSet converts DICOM character encoding names, such as
 // "ISO-IR 100" to golang decoder. It will return nil, nil for the default (7bit
 // ASCII) encoding. Cf. P3.2
 // D.6.2. http://dicom.nema.org/medical/dicom/2016d/output/chtml/part02/sect_D.6.2.html
-func ParseSpecificCharacterSet(encodingNames []string) (CodingSystem, error) {
+func ParseSpecificCharacterSet(encodingNames []string, CP1250Fix bool) (CodingSystem, error) {
 	// Set the []byte -> string decoder for the rest of the
 	// file.  It's sad that SpecificCharacterSet isn't part
 	// of metadata, but is part of regular attrs, so we need
@@ -86,6 +87,9 @@ func ParseSpecificCharacterSet(encodingNames []string) (CodingSystem, error) {
 	//}
 	var decoders []*encoding.Decoder
 	for _, name := range encodingNames {
+		if CP1250Fix && name == "ISO_IR 100" {
+			name = "CP1250HACK"
+		}
 		var c *encoding.Decoder
 		dicomlog.Vprintf(2, "dicom.ParseSpecificCharacterSet: Using coding system %s", name)
 		if htmlName, ok := htmlEncodingNames[name]; !ok {
