@@ -221,6 +221,19 @@ func (e *Element) GetStrings() ([]string, error) {
 	return values, nil
 }
 
+//return child Elements, nil if no els or el is a val
+func (e *Element) GetElements() []*Element {
+	values := make([]*Element, 0, len(e.Value))
+	for _, v := range e.Value {
+		v, ok := v.(*Element)
+		if ok {
+			values = append(values, v)
+		}
+	}
+
+	return values
+}
+
 // MustGetStrings is similar to GetStrings, but crashes the process on error.
 func (e *Element) MustGetStrings() []string {
 	values, err := e.GetStrings()
