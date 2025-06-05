@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"unicode"
 
 	"github.com/msz-kp/go-dicom/dicomio"
 	"github.com/msz-kp/go-dicom/dicomtag"
@@ -124,7 +125,7 @@ func ReadDataSet(in io.Reader, options ReadOptions) (*DataSet, error) {
 			// of metadata, but is part of regular attrs, so we need
 			// to watch out for multiple occurrences of this type of
 			// elements.
-			encodingNames, err := elem.GetStrings()
+			encodingNames, err := elem.GetCleanStrings()
 			if err != nil {
 				buffer.SetError(err)
 			} else {
@@ -141,10 +142,63 @@ func ReadDataSet(in io.Reader, options ReadOptions) (*DataSet, error) {
 			}
 		}
 		if options.ReturnTags == nil || (options.ReturnTags != nil && tagInList(elem.Tag, options.ReturnTags)) {
+			// Очистка строковых значений от непечатаемых символов, если необходимо
+			if elem.Value != nil {
+				if strSlice := elem.Value; strSlice != nil && len(strSlice) > 0 {
+					if strVal, ok := strSlice[0].(string); ok {
+						elem.Value = []interface{}{FilterNonPrintable(strVal)}
+					}
+				} else if strSlice := elem.Value; strSlice != nil {
+					var newStrSlice []string
+					for _, v := range strSlice {
+						if str, ok := v.(string); ok {
+							newStrSlice = append(newStrSlice, FilterNonPrintable(str))
+						}
+					}
+
+					var interfaceSlice []interface{}
+					for _, str := range newStrSlice {
+						interfaceSlice = append(interfaceSlice, str)
+					}
+					elem.Value = interfaceSlice
+					elem.Value = strSlice
+				}
+			}
 			file.Elements = append(file.Elements, elem)
 		}
 	}
 	return file, buffer.Error()
+}
+
+func FilterNonPrintable(s string) string {
+	result := ""
+	for _, r := range s {
+		if unicode.IsPrint(r) {
+			result += string(r)
+		}
+	}
+	return result
+}
+
+func (e *Element) GetCleanString() (string, error) {
+	s, err := e.GetString()
+	if err != nil {
+		return "", err
+	}
+	return FilterNonPrintable(s), nil
+}
+
+func (e *Element) GetCleanStrings() ([]string, error) {
+	strs, err := e.GetStrings()
+	if err != nil {
+		return nil, err
+	}
+
+	cleanStrs := make([]string, len(strs))
+	for i, s := range strs {
+		cleanStrs[i] = FilterNonPrintable(s)
+	}
+	return cleanStrs, nil
 }
 
 func getTransferSyntax(ds *DataSet) (bo binary.ByteOrder, implicit dicomio.IsImplicitVR, err error) {
@@ -152,7 +206,7 @@ func getTransferSyntax(ds *DataSet) (bo binary.ByteOrder, implicit dicomio.IsImp
 	if err != nil {
 		return nil, dicomio.UnknownVR, err
 	}
-	transferSyntaxUID, err := elem.GetString()
+	transferSyntaxUID, err := elem.GetCleanString()
 	if err != nil {
 		return nil, dicomio.UnknownVR, err
 	}
