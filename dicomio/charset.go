@@ -2,6 +2,7 @@ package dicomio
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/msz-kp/go-dicom/dicomlog"
 	"golang.org/x/text/encoding"
@@ -69,6 +70,7 @@ var htmlEncodingNames = map[string]string{
 	"ISO 2022 IR 166": "iso-ir-166",
 	"ISO 2022 IR 87":  "iso-2022-jp",
 	"ISO_IR 192":      "utf-8",
+	"GB18030":         "gb18030", // Добавляем поддержку GB18030
 	"CP1250HACK":      "cp1250",
 }
 
@@ -91,9 +93,15 @@ func ParseSpecificCharacterSet(encodingNames []string, CP1250Fix bool) (CodingSy
 		if CP1250Fix && name == "ISO_IR 100" {
 			name = "CP1250HACK"
 		}
+
+		// Нормализуем имя кодировки перед поиском в мапе
+		normalizedName := strings.TrimSpace(name)
+		// Замена всех подряд идущих пробелов на один пробел
+		normalizedName = strings.Join(strings.Fields(normalizedName), " ")
+
 		var c *encoding.Decoder
-		dicomlog.Vprintf(2, "dicom.ParseSpecificCharacterSet: Using coding system %s", name)
-		if htmlName, ok := htmlEncodingNames[name]; !ok {
+		dicomlog.Vprintf(2, "dicom.ParseSpecificCharacterSet: Using coding system %s", normalizedName)
+		if htmlName, ok := htmlEncodingNames[normalizedName]; !ok {
 			// TODO(saito) Support more encodings.
 			return CodingSystem{}, fmt.Errorf("dicom.ParseSpecificCharacterSet: Unknown character set '%s'. Assuming utf-8", encodingNames[0])
 		} else {
