@@ -7,9 +7,11 @@ import (
 	"io"
 	"os"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/msz-kp/go-dicom/dicomio"
 	"github.com/msz-kp/go-dicom/dicomtag"
+	"golang.org/x/text/encoding/charmap"
 )
 
 // GoDICOMImplementationClassUIDPrefix defines the UID prefix for
@@ -54,6 +56,9 @@ type ReadOptions struct {
 
 	// :/
 	CP1250Fix bool
+
+	// DefaultCyrillicEncoding - кодировка по умолчанию для кириллицы
+	DefaultCyrillicEncoding string
 }
 
 // ReadDataSetInBytes is a shorthand for ReadDataSet(bytes.NewBuffer(data), len(data)).
@@ -83,6 +88,68 @@ func ReadDataSetFromFile(path string, options ReadOptions) (*DataSet, error) {
 	return ds, err
 }
 
+// detectCyrillicEncoding пытается определить кириллическую кодировку
+func detectCyrillicEncoding(text string, defaultEncoding string) string {
+	// Если уже UTF-8, возвращаем как есть
+	if utf8.ValidString(text) {
+		return text
+	}
+
+	// Список кодировок для проверки
+	encodings := []struct {
+		name    string
+		decoder *charmap.Charmap
+	}{
+		{"windows-1251", charmap.Windows1251},
+		{"koi8-r", charmap.KOI8R},
+		{"iso-8859-5", charmap.ISO8859_5},
+		{"cp866", charmap.CodePage866},
+	}
+
+	// Если указана кодировка по умолчанию, проверяем её первой
+	if defaultEncoding != "" {
+		for _, enc := range encodings {
+			if enc.name == defaultEncoding {
+				if decoded, err := enc.decoder.NewDecoder().String(text); err == nil {
+					if containsCyrillic(decoded) {
+						return decoded
+					}
+				}
+				break
+			}
+		}
+	}
+
+	// Пробуем все кодировки
+	for _, enc := range encodings {
+		if enc.name == defaultEncoding {
+			continue // уже проверили выше
+		}
+
+		if decoded, err := enc.decoder.NewDecoder().String(text); err == nil {
+			if containsCyrillic(decoded) {
+				return decoded
+			}
+		}
+	}
+
+	// Если ничего не помогло, возвращаем исходный текст
+	return text
+}
+
+// containsCyrillic проверяет, содержит ли строка кириллические символы
+func containsCyrillic(text string) bool {
+	for _, r := range text {
+		if (r >= 0x0400 && r <= 0x04FF) || // Cyrillic
+			(r >= 0x0500 && r <= 0x052F) || // Cyrillic Supplement
+			(r >= 0x2DE0 && r <= 0x2DFF) || // Cyrillic Extended-A
+			(r >= 0xA640 && r <= 0xA69F) { // Cyrillic Extended-B
+			return true
+		}
+	}
+	return false
+}
+
 // ReadDataSet reads a DICOM file from "io".
 //
 // On parse error, this function may return a non-nil dataset and a non-nil
@@ -103,6 +170,9 @@ func ReadDataSet(in io.Reader, options ReadOptions) (*DataSet, error) {
 	}
 	buffer.PushTransferSyntax(endian, implicit)
 	defer buffer.PopTransferSyntax()
+
+	// Флаг для отслеживания, была ли установлена кодировка
+	charsetSet := false
 
 	// Read the list of elements.
 	for !buffer.EOF() {
@@ -138,9 +208,26 @@ func ReadDataSet(in io.Reader, options ReadOptions) (*DataSet, error) {
 					buffer.SetError(err)
 				} else {
 					buffer.SetCodingSystem(cs)
+					charsetSet = true
 				}
 			}
 		}
+
+		// Если это строковый элемент и кодировка не была установлена,
+		// пытаемся автоматически определить кириллическую кодировку
+		if !charsetSet && elem.Value != nil && len(elem.Value) > 0 {
+			if strVal, ok := elem.Value[0].(string); ok && strVal != "" {
+				// Проверяем, есть ли кракозябры (неправильно декодированные символы)
+				if containsGarbage(strVal) {
+					// Пытаемся декодировать с разными кириллическими кодировками
+					decoded := detectCyrillicEncoding(strVal, options.DefaultCyrillicEncoding)
+					if decoded != strVal {
+						elem.Value = []interface{}{decoded}
+					}
+				}
+			}
+		}
+
 		if options.ReturnTags == nil || (options.ReturnTags != nil && tagInList(elem.Tag, options.ReturnTags)) {
 			// Очистка строковых значений от непечатаемых символов, если необходимо
 			if elem.Value != nil {
@@ -170,10 +257,31 @@ func ReadDataSet(in io.Reader, options ReadOptions) (*DataSet, error) {
 	return file, buffer.Error()
 }
 
+// containsGarbage проверяет, содержит ли строка "кракозябры"
+func containsGarbage(s string) bool {
+	garbageCount := 0
+	totalRunes := 0
+
+	for _, r := range s {
+		totalRunes++
+		// Символы � обычно указывают на проблемы с кодировкой
+		if r == '�' || r == '\uFFFD' {
+			garbageCount++
+		}
+		// Подозрительные последовательности байтов, характерные для неправильно декодированной кириллицы
+		if r >= 0x80 && r <= 0xFF {
+			garbageCount++
+		}
+	}
+
+	// Если больше 20% символов выглядят как кракозябры
+	return totalRunes > 0 && float64(garbageCount)/float64(totalRunes) > 0.2
+}
+
 func FilterNonPrintable(s string) string {
 	result := ""
 	for _, r := range s {
-		if unicode.IsPrint(r) {
+		if unicode.IsPrint(r) || r == ' ' || r == '\t' {
 			result += string(r)
 		}
 	}
