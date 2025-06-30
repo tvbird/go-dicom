@@ -363,10 +363,19 @@ func WriteElement(e *dicomio.Encoder, elem *Element, opts *WriteOptSet) {
 		case "UI":
 			s := ""
 			for i, value := range elem.Value {
-				substr, ok := value.(string)
-				if !ok {
-					e.SetErrorf("%v: Non-string value found", dicomtag.DebugString(elem.Tag))
-					continue
+				var substr string
+				switch v := value.(type) {
+				case string:
+					substr = v
+				case dicomtag.Tag:
+					substr = fmt.Sprintf("%04X%04X", v.Group, v.Element)
+				case uint32:
+					substr = fmt.Sprintf("%08X", v)
+				case []byte:
+					substr = string(v)
+				default:
+					// Преобразуем в строку любой другой тип
+					substr = fmt.Sprintf("%v", v)
 				}
 				if i > 0 {
 					s += "\\"
@@ -388,10 +397,19 @@ func WriteElement(e *dicomio.Encoder, elem *Element, opts *WriteOptSet) {
 
 			s := ""
 			for i, value := range elem.Value {
-				substr, ok := value.(string)
-				if !ok {
-					e.SetErrorf("%v: Non-string value found", dicomtag.DebugString(elem.Tag))
-					continue
+				var substr string
+				switch v := value.(type) {
+				case string:
+					substr = v
+				case dicomtag.Tag:
+					substr = fmt.Sprintf("%04X%04X", v.Group, v.Element)
+				case uint32:
+					substr = fmt.Sprintf("%08X", v)
+				case []byte:
+					substr = string(v)
+				default:
+					// Преобразуем в строку любой другой тип
+					substr = fmt.Sprintf("%v", v)
 				}
 				if i > 0 {
 					s += "\\"
@@ -420,9 +438,9 @@ func WriteElement(e *dicomio.Encoder, elem *Element, opts *WriteOptSet) {
 // TransferSyntax element in "ds". If ds is missing that or a few other
 // essential elements, this function returns an error.
 //
-//  ds := ... read or create dicom.Dataset ...
-//  out, err := os.Create("test.dcm")
-//  err := dicom.Write(out, ds)
+//	ds := ... read or create dicom.Dataset ...
+//	out, err := os.Create("test.dcm")
+//	err := dicom.Write(out, ds)
 func WriteDataSet(out io.Writer, ds *DataSet, opts ...WriteOption) error {
 	optSet := toWriteOptSet(opts...)
 	e := dicomio.NewEncoder(out, nil, dicomio.UnknownVR)
