@@ -460,7 +460,8 @@ func WriteDataSet(out io.Writer, ds *DataSet, opts ...WriteOption) error {
 	}
 	e.PushTransferSyntax(endian, implicit)
 	for _, elem := range ds.Elements {
-		if elem.Tag.Group != dicomtag.MetadataGroup {
+		// Пропускаем приватные теги (нечетная группа) и метаданные
+		if elem.Tag.Group != dicomtag.MetadataGroup && elem.Tag.Group%2 == 0 {
 			WriteElement(e, elem, optSet)
 		}
 	}
