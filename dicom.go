@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
@@ -150,6 +151,24 @@ func containsCyrillic(text string) bool {
 	return false
 }
 
+// processMultiValueDSElement обрабатывает элементы типа DS с множественными значениями
+func processMultiValueDSElement(elem *Element) {
+	if elem.Value != nil && len(elem.Value) == 1 {
+		if strVal, ok := elem.Value[0].(string); ok {
+			// Проверяем, содержит ли строка разделители
+			if strings.Contains(strVal, "\\") {
+				// Разбиваем строку по разделителям
+				parts := strings.Split(strVal, "\\")
+				newValues := make([]interface{}, len(parts))
+				for i, part := range parts {
+					newValues[i] = strings.TrimSpace(part)
+				}
+				elem.Value = newValues
+			}
+		}
+	}
+}
+
 // ReadDataSet reads a DICOM file from "io".
 //
 // On parse error, this function may return a non-nil dataset and a non-nil
@@ -228,28 +247,23 @@ func ReadDataSet(in io.Reader, options ReadOptions) (*DataSet, error) {
 			}
 		}
 
-		if options.ReturnTags == nil || (options.ReturnTags != nil && tagInList(elem.Tag, options.ReturnTags)) {
-			// Очистка строковых значений от непечатаемых символов, если необходимо
-			if elem.Value != nil {
-				if strSlice := elem.Value; strSlice != nil && len(strSlice) > 0 {
-					if strVal, ok := strSlice[0].(string); ok {
-						elem.Value = []interface{}{FilterNonPrintable(strVal)}
-					}
-				} else if strSlice := elem.Value; strSlice != nil {
-					var newStrSlice []string
-					for _, v := range strSlice {
-						if str, ok := v.(string); ok {
-							newStrSlice = append(newStrSlice, FilterNonPrintable(str))
-						}
-					}
+		// Обрабатываем элементы типа DS с множественными значениями
+		if elem.VR == "DS" {
+			processMultiValueDSElement(elem)
+		}
 
-					var interfaceSlice []interface{}
-					for _, str := range newStrSlice {
-						interfaceSlice = append(interfaceSlice, str)
+		if options.ReturnTags == nil || (options.ReturnTags != nil && tagInList(elem.Tag, options.ReturnTags)) {
+			// Очистка строковых значений от непечатаемых символов, сохраняя множественные значения
+			if elem.Value != nil {
+				cleanValues := make([]interface{}, len(elem.Value))
+				for i, value := range elem.Value {
+					if strVal, ok := value.(string); ok {
+						cleanValues[i] = FilterNonPrintable(strVal)
+					} else {
+						cleanValues[i] = value
 					}
-					elem.Value = interfaceSlice
-					elem.Value = strSlice
 				}
+				elem.Value = cleanValues
 			}
 			file.Elements = append(file.Elements, elem)
 		}
